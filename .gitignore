@@ -1,0 +1,73 @@
+# ---------- macOS ----------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ---------- Editors / IDEs ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---------- Logs ----------
+*.log
+logs/
+
+# ---------- Env / Secrets ----------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# ---------- Node / Web ----------
+node_modules/
+.next/
+.nuxt/
+.parcel-cache/
+.turbo/
+.cache/
+out/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# ---------- Unity ----------
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Mm]emoryCaptures/
+[Uu]serSettings/
+
+# ---------- Godot ----------
+.godot/
+*.translation
+export_presets.cfg
+
+# ---------- Game assets caches ----------
+*.import
+*.tmp
