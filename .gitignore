@@ -69,5 +69,5 @@ out/
 export_presets.cfg
 
 # ---------- Game assets caches ----------
-*.import
 *.tmp
+# 注意：*.import 不能忽略 —— Godot 4 用它保存资源 UID，必须 commit
