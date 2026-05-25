@@ -11,11 +11,21 @@ extends Node
 
 const Case01 = preload("res://data/cases/case_01.gd")
 
+# ---- 美术资源 ----
+const BG_CAFETERIA      = preload("res://assets/images/backgrounds/cafeteria_courtroom.png")
+const FACE_NORMAL       = preload("res://assets/images/characters/yi_nanxing/normal.png")
+const FACE_NERVOUS      = preload("res://assets/images/characters/yi_nanxing/nervous.png")
+const FACE_SHOCKED      = preload("res://assets/images/characters/yi_nanxing/shocked.png")
+const FACE_POINTING     = preload("res://assets/images/characters/yi_nanxing/pointing.png")
+const FACE_THINKING     = preload("res://assets/images/characters/yi_nanxing/thinking.png")
+const OBJECTION_IMG     = preload("res://assets/images/effects/objection.png")
+
 enum Phase { TESTIMONY, EVIDENCE_PICK, OBJECTION_PLAY, GAME_OVER, CLEAR }
 
 # ------- 运行时节点 -------
 var _ui_layer: CanvasLayer
-var _bg: ColorRect
+var _bg: TextureRect
+var _protagonist: TextureRect
 var _trust_bar: HBoxContainer
 var _witness_label: Label
 var _statement_container: VBoxContainer
@@ -26,7 +36,7 @@ var _evidence_container: VBoxContainer
 var _evidence_labels: Array[Label] = []
 var _evidence_desc: Label
 var _flash: ColorRect
-var _objection_text: Label
+var _objection_sprite: TextureRect
 var _result_label: Label
 
 # ------- 状态 -------
@@ -64,15 +74,35 @@ func _build_ui() -> void:
 	_ui_layer = CanvasLayer.new()
 	add_child(_ui_layer)
 
-	# 背景：深蓝木纹
-	_bg = ColorRect.new()
-	_bg.color = Color(0.07, 0.10, 0.18)
+	# 1) 背景图：食堂模拟法庭
+	_bg = TextureRect.new()
+	_bg.texture = BG_CAFETERIA
 	_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_layer.add_child(_bg)
 
-	# 信任值条（5 颗心，右上角）
+	# 2) 半透明遮罩，让文字更易读
+	var overlay := ColorRect.new()
+	overlay.color = Color(0, 0, 0, 0.35)
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui_layer.add_child(overlay)
+
+	# 3) 主角立绘（右侧）
+	_protagonist = TextureRect.new()
+	_protagonist.texture = FACE_NORMAL
+	_protagonist.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_protagonist.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_protagonist.position = Vector2(880, 170)
+	_protagonist.size = Vector2(380, 540)
+	_protagonist.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui_layer.add_child(_protagonist)
+
+	# 4) 信任值条（5 颗，左上）
 	_trust_bar = HBoxContainer.new()
-	_trust_bar.position = Vector2(1280 - 240, 24)
+	_trust_bar.position = Vector2(60, 24)
 	_trust_bar.add_theme_constant_override("separation", 8)
 	_ui_layer.add_child(_trust_bar)
 	for i in GameState.MAX_TRUST:
@@ -81,15 +111,15 @@ func _build_ui() -> void:
 		pip.color = Color(0.93, 0.27, 0.38)
 		_trust_bar.add_child(pip)
 
-	# 证人名 + 证词标题
+	# 5) 证人名 + 证词标题（左上偏下）
 	var header := VBoxContainer.new()
-	header.position = Vector2(60, 40)
+	header.position = Vector2(60, 80)
 	_ui_layer.add_child(header)
 
 	_witness_label = Label.new()
 	_witness_label.text = "证人： %s" % Case01.WITNESS_NAME
 	_witness_label.add_theme_font_size_override("font_size", 22)
-	_witness_label.modulate = Color(1, 0.8, 0.4)
+	_witness_label.modulate = Color(1, 0.85, 0.4)
 	header.add_child(_witness_label)
 
 	var title := Label.new()
@@ -98,33 +128,33 @@ func _build_ui() -> void:
 	title.modulate = Color(1, 1, 1)
 	header.add_child(title)
 
-	# 证词容器
+	# 6) 证词容器（左侧，避开主角立绘）
 	_statement_container = VBoxContainer.new()
-	_statement_container.position = Vector2(80, 160)
-	_statement_container.custom_minimum_size = Vector2(1120, 0)
-	_statement_container.add_theme_constant_override("separation", 18)
+	_statement_container.position = Vector2(60, 200)
+	_statement_container.custom_minimum_size = Vector2(800, 0)
+	_statement_container.add_theme_constant_override("separation", 16)
 	_ui_layer.add_child(_statement_container)
 	for s in _statements:
 		var lbl := Label.new()
 		lbl.text = "  " + str(s["text"])
 		lbl.add_theme_font_size_override("font_size", 22)
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		lbl.custom_minimum_size = Vector2(1120, 0)
+		lbl.custom_minimum_size = Vector2(800, 0)
 		_statement_container.add_child(lbl)
 		_statement_labels.append(lbl)
 
-	# 操作提示
+	# 7) 操作提示
 	_hint_label = Label.new()
-	_hint_label.position = Vector2(80, 600)
+	_hint_label.position = Vector2(60, 660)
 	_hint_label.add_theme_font_size_override("font_size", 18)
-	_hint_label.modulate = Color(0.8, 0.85, 1)
+	_hint_label.modulate = Color(0.85, 0.9, 1)
 	_ui_layer.add_child(_hint_label)
 	_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
 
-	# 证据栏 Panel（默认隐藏）
+	# 8) 证据栏 Panel
 	_evidence_panel = Panel.new()
-	_evidence_panel.position = Vector2(280, 200)
-	_evidence_panel.size = Vector2(720, 360)
+	_evidence_panel.position = Vector2(200, 180)
+	_evidence_panel.size = Vector2(880, 400)
 	_evidence_panel.visible = false
 	_ui_layer.add_child(_evidence_panel)
 
@@ -135,36 +165,39 @@ func _build_ui() -> void:
 	_evidence_panel.add_child(ev_title)
 
 	_evidence_container = VBoxContainer.new()
-	_evidence_container.position = Vector2(24, 56)
-	_evidence_container.custom_minimum_size = Vector2(672, 0)
+	_evidence_container.position = Vector2(24, 60)
+	_evidence_container.custom_minimum_size = Vector2(832, 0)
 	_evidence_container.add_theme_constant_override("separation", 10)
 	_evidence_panel.add_child(_evidence_container)
 
 	_evidence_desc = Label.new()
-	_evidence_desc.position = Vector2(24, 280)
-	_evidence_desc.custom_minimum_size = Vector2(672, 60)
+	_evidence_desc.position = Vector2(24, 300)
+	_evidence_desc.custom_minimum_size = Vector2(832, 80)
 	_evidence_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_evidence_desc.modulate = Color(0.8, 0.85, 1)
+	_evidence_desc.modulate = Color(0.85, 0.9, 1)
 	_evidence_desc.add_theme_font_size_override("font_size", 16)
 	_evidence_panel.add_child(_evidence_desc)
 
-	# 红色闪光层
+	# 9) 红色闪光层
 	_flash = ColorRect.new()
 	_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_flash.color = Color(1, 0.1, 0.1, 0)
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_layer.add_child(_flash)
 
-	# 「异议あり！」大字
-	_objection_text = Label.new()
-	_objection_text.text = "異議あり！"
-	_objection_text.add_theme_font_size_override("font_size", 140)
-	_objection_text.modulate = Color(1, 0.95, 0.2)
-	_objection_text.position = Vector2(180, 240)
-	_objection_text.scale = Vector2.ZERO
-	_ui_layer.add_child(_objection_text)
+	# 10) 「異議あり！」大字图
+	_objection_sprite = TextureRect.new()
+	_objection_sprite.texture = OBJECTION_IMG
+	_objection_sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_objection_sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_objection_sprite.size = Vector2(900, 600)
+	_objection_sprite.position = Vector2(190, 60)
+	_objection_sprite.pivot_offset = Vector2(450, 300)
+	_objection_sprite.scale = Vector2.ZERO
+	_objection_sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui_layer.add_child(_objection_sprite)
 
-	# 结果浮层
+	# 11) 结果浮层
 	_result_label = Label.new()
 	_result_label.position = Vector2(0, 320)
 	_result_label.size = Vector2(1280, 80)
@@ -172,6 +205,10 @@ func _build_ui() -> void:
 	_result_label.add_theme_font_size_override("font_size", 36)
 	_result_label.visible = false
 	_ui_layer.add_child(_result_label)
+
+# 设置主角表情立绘
+func _set_face(face: Texture2D) -> void:
+	_protagonist.texture = face
 
 # 刷新证词高亮
 func _refresh_statements() -> void:
@@ -266,6 +303,7 @@ func _open_evidence_panel() -> void:
 	_phase = Phase.EVIDENCE_PICK
 	_evidence_idx = 0
 	_evidence_panel.visible = true
+	_set_face(FACE_THINKING)
 	_refresh_statements()
 	_refresh_evidence_highlight()
 	_set_hint("[↑↓] 选证据    [SPACE] 举证！   [E] 取消")
@@ -274,6 +312,7 @@ func _open_evidence_panel() -> void:
 func _close_evidence_panel() -> void:
 	_phase = Phase.TESTIMONY
 	_evidence_panel.visible = false
+	_set_face(FACE_NORMAL)
 	_refresh_statements()
 	_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
 
@@ -283,6 +322,7 @@ func _submit_evidence() -> void:
 		return
 	_phase = Phase.OBJECTION_PLAY
 	_evidence_panel.visible = false
+	_set_face(FACE_POINTING)
 	var chosen_evi_id: String = _evidence_ids[_evidence_idx]
 	var expected: String = _correct_pair.get(_statement_idx, "")
 	if expected != "" and chosen_evi_id == expected:
@@ -306,20 +346,20 @@ func _play_objection(success: bool) -> void:
 	flash_tw.tween_property(_flash, "color:a", 0.0, 0.45)
 
 	# 大字飞入
-	_objection_text.scale = Vector2(0.2, 0.2)
-	_objection_text.rotation = -0.4
-	_objection_text.modulate.a = 1.0
+	_objection_sprite.scale = Vector2(0.2, 0.2)
+	_objection_sprite.rotation = -0.4
+	_objection_sprite.modulate.a = 1.0
 	var text_tw := create_tween().set_parallel(true)
-	text_tw.tween_property(_objection_text, "scale", Vector2(1.0, 1.0), 0.25)\
+	text_tw.tween_property(_objection_sprite, "scale", Vector2(1.0, 1.0), 0.25)\
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	text_tw.tween_property(_objection_text, "rotation", 0.0, 0.25)\
+	text_tw.tween_property(_objection_sprite, "rotation", 0.0, 0.25)\
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 	await get_tree().create_timer(1.2).timeout
 	var fade_tw := create_tween()
-	fade_tw.tween_property(_objection_text, "modulate:a", 0.0, 0.35)
+	fade_tw.tween_property(_objection_sprite, "modulate:a", 0.0, 0.35)
 	await fade_tw.finished
-	_objection_text.scale = Vector2.ZERO
+	_objection_sprite.scale = Vector2.ZERO
 
 	if success:
 		_on_objection_success()
@@ -331,15 +371,19 @@ func _on_objection_success() -> void:
 	var reveal: String = str(_statements[_statement_idx].get("reveal", ""))
 	_show_result("✓ 击破矛盾！\n证人： %s" % reveal, Color(0.4, 1, 0.55))
 	_phase = Phase.CLEAR
+	# 主角保持指证姿势作为胜利定格
+	_set_face(FACE_POINTING)
 	_set_hint("🎉 通关 demo —— 按 [R] 重开")
 
 # 举证失败 — 扣信任值
 func _on_objection_fail() -> void:
 	GameState.penalize(1)
+	_set_face(FACE_SHOCKED)
 	_show_result("✗ 错误举证！信任值 -1", Color(1, 0.5, 0.5))
 	await get_tree().create_timer(1.4).timeout
 	_result_label.visible = false
 	_phase = Phase.TESTIMONY
+	_set_face(FACE_NERVOUS)
 	_refresh_statements()
 	_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
 
@@ -358,5 +402,6 @@ func _on_trust_changed(new_value: int, max_value: int) -> void:
 # Game Over
 func _on_game_over() -> void:
 	_phase = Phase.GAME_OVER
+	_set_face(FACE_SHOCKED)
 	_show_result("⚖  GAME OVER  ⚖\n按 [R] 重开", Color(1, 0.4, 0.4))
 	_set_hint("")
