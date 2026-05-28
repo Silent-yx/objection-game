@@ -5,6 +5,7 @@
 #   ↑/↓        选择证词
 #   E          打开/关闭证据栏
 #   ↑/↓ (栏内) 选择证据
+#   D  (栏内)  调查证据 → 展开/收起「深度详情」
 #   SPACE      在证据栏打开时：举证（喊「异议」）
 #   R          重开本话
 extends Node
@@ -35,6 +36,9 @@ var _evidence_panel: Panel
 var _evidence_container: VBoxContainer
 var _evidence_labels: Array[Label] = []
 var _evidence_desc: Label
+var _evidence_detail_panel: Panel
+var _evidence_detail_label: Label
+var _toast_label: Label
 var _flash: ColorRect
 var _objection_sprite: TextureRect
 var _result_label: Label
@@ -45,7 +49,9 @@ var _statement_idx: int = 0
 var _evidence_idx: int = 0
 var _statements: Array
 var _evidence_ids: Array
-var _correct_pair: Dictionary = {}   # statement_idx -> evidence_id
+var _correct_pair: Dictionary = {}      # statement_idx -> evidence_id
+var _stages_triggered: Array = []       # 已触发过追加证据的证词索引集合
+var _detail_open: bool = false          # 深度详情是否展开
 
 # 节点准备：初始化游戏并构建 UI
 func _ready() -> void:
@@ -57,6 +63,8 @@ func _ready() -> void:
 	GameState.game_over.connect(_on_game_over)
 	_refresh_statements()
 	_refresh_evidence_list()
+	# 初始证词索引 0 也可能触发证据追加
+	_check_stage_additions(_statement_idx)
 
 # 载入第一话数据
 func _load_case() -> void:
@@ -100,7 +108,7 @@ func _build_ui() -> void:
 	_protagonist.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_layer.add_child(_protagonist)
 
-	# 4) 信任值条（5 颗，左上）
+	# 4) 信任值条（左上）
 	_trust_bar = HBoxContainer.new()
 	_trust_bar.position = Vector2(60, 24)
 	_trust_bar.add_theme_constant_override("separation", 8)
@@ -111,13 +119,13 @@ func _build_ui() -> void:
 		pip.color = Color(0.93, 0.27, 0.38)
 		_trust_bar.add_child(pip)
 
-	# 5) 证人名 + 证词标题（左上偏下）
+	# 5) 证人名 + 证词标题
 	var header := VBoxContainer.new()
 	header.position = Vector2(60, 80)
 	_ui_layer.add_child(header)
 
 	_witness_label = Label.new()
-	_witness_label.text = "证人： %s" % Case01.WITNESS_NAME
+	_witness_label.text = "检方： %s" % Case01.WITNESS_NAME
 	_witness_label.add_theme_font_size_override("font_size", 22)
 	_witness_label.modulate = Color(1, 0.85, 0.4)
 	header.add_child(_witness_label)
@@ -128,16 +136,15 @@ func _build_ui() -> void:
 	title.modulate = Color(1, 1, 1)
 	header.add_child(title)
 
-	# 6) 证词容器（左侧，避开主角立绘）
+	# 6) 证词容器
 	_statement_container = VBoxContainer.new()
 	_statement_container.position = Vector2(60, 200)
 	_statement_container.custom_minimum_size = Vector2(800, 0)
-	_statement_container.add_theme_constant_override("separation", 16)
+	_statement_container.add_theme_constant_override("separation", 14)
 	_ui_layer.add_child(_statement_container)
 	for s in _statements:
 		var lbl := Label.new()
-		lbl.text = "  " + str(s["text"])
-		lbl.add_theme_font_size_override("font_size", 22)
+		lbl.add_theme_font_size_override("font_size", 20)
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		lbl.custom_minimum_size = Vector2(800, 0)
 		_statement_container.add_child(lbl)
@@ -159,7 +166,7 @@ func _build_ui() -> void:
 	_ui_layer.add_child(_evidence_panel)
 
 	var ev_title := Label.new()
-	ev_title.text = "🗂  证据栏  —  选证据后按 [SPACE] 举证"
+	ev_title.text = "🗂  证据栏  —  [D] 调查证物    [SPACE] 举证"
 	ev_title.position = Vector2(24, 16)
 	ev_title.add_theme_font_size_override("font_size", 20)
 	_evidence_panel.add_child(ev_title)
@@ -178,14 +185,45 @@ func _build_ui() -> void:
 	_evidence_desc.add_theme_font_size_override("font_size", 16)
 	_evidence_panel.add_child(_evidence_desc)
 
-	# 9) 红色闪光层
+	# 9) 深度详情浮层（默认隐藏）
+	_evidence_detail_panel = Panel.new()
+	_evidence_detail_panel.position = Vector2(120, 100)
+	_evidence_detail_panel.size = Vector2(1040, 520)
+	_evidence_detail_panel.visible = false
+	_ui_layer.add_child(_evidence_detail_panel)
+
+	var dt_title := Label.new()
+	dt_title.text = "🔍  调查证物  —  再按 [D] 关闭"
+	dt_title.position = Vector2(24, 16)
+	dt_title.add_theme_font_size_override("font_size", 22)
+	dt_title.modulate = Color(1, 0.95, 0.5)
+	_evidence_detail_panel.add_child(dt_title)
+
+	_evidence_detail_label = Label.new()
+	_evidence_detail_label.position = Vector2(40, 80)
+	_evidence_detail_label.size = Vector2(960, 420)
+	_evidence_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_evidence_detail_label.add_theme_font_size_override("font_size", 22)
+	_evidence_detail_label.modulate = Color(1, 1, 1)
+	_evidence_detail_panel.add_child(_evidence_detail_label)
+
+	# 10) Toast（屏幕顶部短暂提示）
+	_toast_label = Label.new()
+	_toast_label.position = Vector2(0, 140)
+	_toast_label.size = Vector2(1280, 40)
+	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast_label.add_theme_font_size_override("font_size", 22)
+	_toast_label.modulate = Color(1, 0.9, 0.4, 0)
+	_ui_layer.add_child(_toast_label)
+
+	# 11) 红色闪光层
 	_flash = ColorRect.new()
 	_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_flash.color = Color(1, 0.1, 0.1, 0)
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_layer.add_child(_flash)
 
-	# 10) 「異議あり！」大字图
+	# 12) 「異議あり！」大字图
 	_objection_sprite = TextureRect.new()
 	_objection_sprite.texture = OBJECTION_IMG
 	_objection_sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -197,7 +235,7 @@ func _build_ui() -> void:
 	_objection_sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_layer.add_child(_objection_sprite)
 
-	# 11) 结果浮层
+	# 13) 结果浮层
 	_result_label = Label.new()
 	_result_label.position = Vector2(0, 320)
 	_result_label.size = Vector2(1280, 80)
@@ -210,16 +248,24 @@ func _build_ui() -> void:
 func _set_face(face: Texture2D) -> void:
 	_protagonist.texture = face
 
+# 组装证词文本（含说话人前缀）
+func _format_statement(idx: int) -> String:
+	var s: Dictionary = _statements[idx]
+	var prefix := "▶ " if idx == _statement_idx and _phase == Phase.TESTIMONY else "  "
+	var speaker = str(s.get("speaker", ""))
+	if speaker == "":
+		return "%s%s" % [prefix, str(s["text"])]
+	return "%s[%s] %s" % [prefix, speaker, str(s["text"])]
+
 # 刷新证词高亮
 func _refresh_statements() -> void:
 	for i in _statement_labels.size():
 		var lbl := _statement_labels[i]
+		lbl.text = _format_statement(i)
 		if i == _statement_idx and _phase == Phase.TESTIMONY:
 			lbl.modulate = Color(1, 0.85, 0.3)
-			lbl.text = "▶ " + str(_statements[i]["text"])
 		else:
 			lbl.modulate = Color(0.95, 0.95, 0.95)
-			lbl.text = "  " + str(_statements[i]["text"])
 
 # 刷新证据列表
 func _refresh_evidence_list() -> void:
@@ -232,25 +278,29 @@ func _refresh_evidence_list() -> void:
 			continue
 		var lbl := Label.new()
 		lbl.add_theme_font_size_override("font_size", 18)
-		lbl.text = _format_evidence_line(i, ev.display_name)
+		lbl.text = _format_evidence_line(i, ev.display_name, ev.has_detail())
 		_evidence_container.add_child(lbl)
 		_evidence_labels.append(lbl)
 	_refresh_evidence_highlight()
 
-# 组装证据条目文本
-func _format_evidence_line(idx: int, display_name: String) -> String:
+# 组装证据条目文本（含可调查角标）
+func _format_evidence_line(idx: int, display_name: String, has_detail: bool) -> String:
 	var prefix := "▶ " if idx == _evidence_idx else "  "
-	return "%s%s" % [prefix, display_name]
+	var detail_mark := "  🔍" if has_detail else ""
+	return "%s%s%s" % [prefix, display_name, detail_mark]
 
 # 证据栏高亮 + 详情
 func _refresh_evidence_highlight() -> void:
 	for i in _evidence_labels.size():
 		var ev = EvidenceDB.get_evidence(_evidence_ids[i])
-		_evidence_labels[i].text = _format_evidence_line(i, ev.display_name)
+		_evidence_labels[i].text = _format_evidence_line(i, ev.display_name, ev.has_detail())
 		_evidence_labels[i].modulate = Color(1, 0.85, 0.3) if i == _evidence_idx else Color(0.95, 0.95, 0.95)
 	if _evidence_ids.size() > 0:
 		var sel = EvidenceDB.get_evidence(_evidence_ids[_evidence_idx])
 		_evidence_desc.text = "  " + sel.description
+		# 切换选中时关闭已展开的深度详情
+		if _detail_open:
+			_close_detail()
 
 # 设置底部提示文本
 func _set_hint(text: String) -> void:
@@ -279,14 +329,23 @@ func _handle_testimony_input(key: int) -> void:
 	if key == KEY_UP:
 		_statement_idx = (_statement_idx - 1 + _statements.size()) % _statements.size()
 		_refresh_statements()
+		_check_stage_additions(_statement_idx)
 	elif key == KEY_DOWN:
 		_statement_idx = (_statement_idx + 1) % _statements.size()
 		_refresh_statements()
+		_check_stage_additions(_statement_idx)
 	elif key == KEY_E:
 		_open_evidence_panel()
 
 # 证据栏阶段输入
 func _handle_evidence_input(key: int) -> void:
+	if key == KEY_D:
+		_toggle_evidence_detail()
+		return
+	# 深度详情打开时，方向键/空格/E 都先关闭它
+	if _detail_open:
+		_close_detail()
+		return
 	if key == KEY_UP:
 		_evidence_idx = (_evidence_idx - 1 + _evidence_ids.size()) % _evidence_ids.size()
 		_refresh_evidence_highlight()
@@ -298,6 +357,36 @@ func _handle_evidence_input(key: int) -> void:
 	elif key == KEY_SPACE:
 		_submit_evidence()
 
+# 切换「调查证物」深度详情面板
+func _toggle_evidence_detail() -> void:
+	if _detail_open:
+		_close_detail()
+	else:
+		_open_detail()
+
+# 打开深度详情
+func _open_detail() -> void:
+	if _evidence_ids.size() == 0:
+		return
+	var ev = EvidenceDB.get_evidence(_evidence_ids[_evidence_idx])
+	if ev == null:
+		return
+	if ev.has_detail():
+		_evidence_detail_label.text = "「%s」\n\n%s" % [ev.display_name, ev.detail]
+		_evidence_detail_label.modulate = Color(1, 1, 1)
+	else:
+		_evidence_detail_label.text = "「%s」\n\n暂无更多细节可调查。" % ev.display_name
+		_evidence_detail_label.modulate = Color(0.7, 0.7, 0.75)
+	_evidence_detail_panel.visible = true
+	_detail_open = true
+	_set_hint("[D] 关闭调查面板")
+
+# 关闭深度详情
+func _close_detail() -> void:
+	_evidence_detail_panel.visible = false
+	_detail_open = false
+	_set_hint("[↑↓] 选证据    [D] 调查证物    [SPACE] 举证！   [E] 取消")
+
 # 打开证据栏
 func _open_evidence_panel() -> void:
 	_phase = Phase.EVIDENCE_PICK
@@ -306,15 +395,47 @@ func _open_evidence_panel() -> void:
 	_set_face(FACE_THINKING)
 	_refresh_statements()
 	_refresh_evidence_highlight()
-	_set_hint("[↑↓] 选证据    [SPACE] 举证！   [E] 取消")
+	_set_hint("[↑↓] 选证据    [D] 调查证物    [SPACE] 举证！   [E] 取消")
 
 # 关闭证据栏
 func _close_evidence_panel() -> void:
 	_phase = Phase.TESTIMONY
 	_evidence_panel.visible = false
+	_close_detail()
 	_set_face(FACE_NORMAL)
 	_refresh_statements()
 	_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
+
+# 检查 STAGE_ADDITIONS — 选中证词时自动追加新证据
+func _check_stage_additions(idx: int) -> void:
+	if idx in _stages_triggered:
+		return
+	var to_add = Case01.STAGE_ADDITIONS.get(idx, [])
+	if to_add.is_empty():
+		return
+	_stages_triggered.append(idx)
+	for eid in to_add:
+		_add_evidence_runtime(eid)
+
+# 运行时追加证据 — 加入物品栏 + Toast 提示
+func _add_evidence_runtime(eid: String) -> void:
+	if eid in _evidence_ids:
+		return
+	var ev = EvidenceDB.get_evidence(eid)
+	if ev == null:
+		return
+	_evidence_ids.append(eid)
+	GameState.add_evidence(eid)
+	_refresh_evidence_list()
+	_show_toast("📎 新证据加入物品栏：%s" % ev.display_name)
+
+# 顶部 Toast 浮现一段时间后淡出
+func _show_toast(text: String) -> void:
+	_toast_label.text = text
+	var tw := create_tween()
+	tw.tween_property(_toast_label, "modulate:a", 1.0, 0.25)
+	tw.tween_interval(2.0)
+	tw.tween_property(_toast_label, "modulate:a", 0.0, 0.4)
 
 # 提交举证：判定正误
 func _submit_evidence() -> void:
@@ -322,6 +443,7 @@ func _submit_evidence() -> void:
 		return
 	_phase = Phase.OBJECTION_PLAY
 	_evidence_panel.visible = false
+	_close_detail()
 	_set_face(FACE_POINTING)
 	var chosen_evi_id: String = _evidence_ids[_evidence_idx]
 	var expected: String = _correct_pair.get(_statement_idx, "")
@@ -332,7 +454,7 @@ func _submit_evidence() -> void:
 
 # 「异议」演出 — 震屏 + 闪光 + 大字
 func _play_objection(success: bool) -> void:
-	# 震屏：动 CanvasLayer.offset
+	# 震屏
 	var shake_tw := create_tween()
 	for i in 8:
 		var dx := randf_range(-18.0, 18.0)
@@ -369,9 +491,8 @@ func _play_objection(success: bool) -> void:
 # 举证成功 — 显示真相、剧情推进
 func _on_objection_success() -> void:
 	var reveal: String = str(_statements[_statement_idx].get("reveal", ""))
-	_show_result("✓ 击破矛盾！\n证人： %s" % reveal, Color(0.4, 1, 0.55))
+	_show_result("✓ 击破矛盾！\n%s" % reveal, Color(0.4, 1, 0.55))
 	_phase = Phase.CLEAR
-	# 主角保持指证姿势作为胜利定格
 	_set_face(FACE_POINTING)
 	_set_hint("🎉 通关 demo —— 按 [R] 重开")
 
