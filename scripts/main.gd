@@ -25,6 +25,26 @@ const FACE_POINTING     = preload("res://assets/images/characters/yi_nanxing/poi
 const FACE_THINKING     = preload("res://assets/images/characters/yi_nanxing/thinking.png")
 const OBJECTION_IMG     = preload("res://assets/images/effects/objection.png")
 
+# 缺图时的兜底背景（沿用第一话占位，待英伦背景补齐）
+const BG_PLACEHOLDER = preload("res://assets/images/backgrounds/cafeteria_courtroom.png")
+
+# 立绘明暗（当前说话人点亮、对方调暗）
+const PORTRAIT_LIT := Color(1, 1, 1, 1)
+const PORTRAIT_DIM := Color(1, 1, 1, 0.4)
+
+# 角色注册表：说话人显示名 → {角色目录 id, 默认表情}
+# 详见 docs/art-assets.md。Robarts 走右侧主角节点，旁白「—」与未注册者不切左侧立绘。
+const CHARACTERS := {
+	"Christine": {"id": "christine", "emotion": "normal"},
+	"Christine Vole": {"id": "christine", "emotion": "normal"},
+	"Leonard Vole": {"id": "leonard", "emotion": "nervous"},
+	"Janet MacKenzie": {"id": "janet", "emotion": "normal"},
+	"助理 Mayhew": {"id": "mayhew", "emotion": "normal"},
+	"Wainwright 法官": {"id": "judge", "emotion": "normal"},
+	"检察官 Myers": {"id": "myers", "emotion": "normal"},
+	"神秘女人": {"id": "mystery_woman", "emotion": "normal"},
+}
+
 enum Phase { DIALOG, STATEMENTS, EVIDENCE_PICK, OBJECTION_PLAY, GAME_OVER, CLEAR }
 
 # 对话结束后要执行的下一步
@@ -35,7 +55,8 @@ const AFTER_OUTRO_ADVANCE: String = "outro_advance"
 # ------- 运行时节点 -------
 var _ui_layer: CanvasLayer
 var _bg: TextureRect
-var _protagonist: TextureRect
+var _protagonist: TextureRect           # 右侧主角 Robarts
+var _witness: TextureRect               # 左侧当前说话证人/角色
 # 顶部信息
 var _scene_label: Label
 var _stage_title: Label
@@ -81,6 +102,8 @@ var _correct_pair: Dictionary = {}        # statement_idx -> evidence_id
 var _broken_statements: Array = []        # 已击破的证词索引
 var _stages_triggered_additions: Array = []
 var _detail_open: bool = false
+var _trial_witness_speaker: String = ""   # 当前庭审证人（用于击破时切表情）
+var _portrait_cache: Dictionary = {}       # 色块占位纹理缓存
 # NARRATIVE_TRIAL（机制失灵幕）反杀暂存
 const CONCEDE_THRESHOLD: int = 3          # 反杀达此次数后 Robarts 自动认输进 outro
 var _pending_backfire_text: String = ""   # 本次出示要显示的定制反杀文案（空=非反杀）
@@ -126,6 +149,16 @@ func _build_ui() -> void:
 	_protagonist.size = Vector2(380, 540)
 	_protagonist.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_layer.add_child(_protagonist)
+
+	# 证人立绘（左下角，对峙位）
+	_witness = TextureRect.new()
+	_witness.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_witness.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_witness.position = Vector2(20, 140)
+	_witness.size = Vector2(380, 540)
+	_witness.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_witness.visible = false
+	_ui_layer.add_child(_witness)
 
 	# 场景标签（左上）
 	_scene_label = Label.new()
@@ -298,11 +331,15 @@ func _start_stage(idx: int) -> void:
 		return
 	_current_stage_idx = idx
 	_current_stage = Case01.STAGES[idx]
+	# 切幕清场：左侧证人立绘归零，避免残留上一幕角色色块
+	_witness.visible = false
+	_witness.texture = null
 	# 终幕进场：揭示真相，触发证据细节翻转
 	if _current_stage.get("set_truth_revealed", false):
 		GameState.truth_revealed = true
 	_scene_label.text = str(_current_stage.get("scene_label", ""))
 	_stage_title.text = str(_current_stage.get("title", ""))
+	_bg.texture = _resolve_bg(str(_current_stage.get("bg", "")))
 	var st_type: String = str(_current_stage.get("type", ""))
 	if st_type == Case01.TYPE_NARRATIVE:
 		_enter_dialog_mode(_current_stage.get("dialog", []), AFTER_ADVANCE_STAGE)
@@ -321,6 +358,8 @@ func _enter_dialog_mode(dialog_array: Array, after_action: String) -> void:
 	_hide_trial_ui()
 	_dialog_panel.visible = true
 	_set_face(FACE_NORMAL)
+	_protagonist.modulate = PORTRAIT_LIT
+	_witness.modulate = PORTRAIT_DIM
 	_set_hint("[SPACE] 推进对话    [R] 重开")
 	_show_dialog_at(_dialog_idx)
 
@@ -332,6 +371,7 @@ func _show_dialog_at(idx: int) -> void:
 	var line: Dictionary = _dialog_queue[idx]
 	_dialog_speaker.text = str(line.get("speaker", ""))
 	_dialog_text.text = str(line.get("text", ""))
+	_update_speaker_portrait(str(line.get("speaker", "")), str(line.get("emotion", "")))
 	# 定向「证据再读」：终幕在特定台词自动摊开某证据的（已翻转）细节
 	var reread: String = str(line.get("inspect_evidence", ""))
 	if reread != "":
@@ -381,6 +421,8 @@ func _enter_statements_phase() -> void:
 		str(_current_stage.get("witness_name", "")),
 		str(_current_stage.get("testimony_title", ""))
 	]
+	_trial_witness_speaker = str(_current_stage.get("witness_name", ""))
+	_update_speaker_portrait(_trial_witness_speaker, "")
 	_statement_idx = 0
 	_rebuild_statement_labels()
 	_refresh_statements()
@@ -417,6 +459,69 @@ func _rebuild_statement_labels() -> void:
 # 设置主角表情立绘
 func _set_face(face: Texture2D) -> void:
 	_protagonist.texture = face
+
+# 按当前说话人切换左侧证人立绘 + 左右明暗对峙
+func _update_speaker_portrait(speaker: String, emotion: String) -> void:
+	if speaker == "Robarts":
+		_protagonist.modulate = PORTRAIT_LIT
+		_witness.modulate = PORTRAIT_DIM
+		return
+	if not CHARACTERS.has(speaker):
+		# 旁白「—」/ 陪审团主席等未注册者：维持现状，不强切立绘
+		return
+	var info: Dictionary = CHARACTERS[speaker]
+	var emo: String = emotion if emotion != "" else str(info["emotion"])
+	_witness.texture = _portrait_texture(str(info["id"]), emo)
+	_witness.visible = true
+	_witness.modulate = PORTRAIT_LIT
+	_protagonist.modulate = PORTRAIT_DIM
+
+# 取角色某表情立绘：优先真图，其次该角色 normal，最后运行时色块占位
+func _portrait_texture(char_id: String, emotion: String) -> Texture2D:
+	var path: String = "res://assets/images/characters/%s/%s.png" % [char_id, emotion]
+	if ResourceLoader.exists(path):
+		var res = load(path)
+		if res is Texture2D:
+			return res
+		push_warning("立绘存在但加载失败（可能未导入）: " + path)
+	var path_normal: String = "res://assets/images/characters/%s/normal.png" % char_id
+	if ResourceLoader.exists(path_normal):
+		var res_n = load(path_normal)
+		if res_n is Texture2D:
+			return res_n
+		push_warning("立绘存在但加载失败（可能未导入）: " + path_normal)
+	return _placeholder_portrait(char_id, emotion)
+
+# 运行时生成色块占位（按角色 id 取色相，受击表情转暗红），无需外部文件
+func _placeholder_portrait(char_id: String, emotion: String) -> Texture2D:
+	var key: String = char_id + ":" + emotion
+	if _portrait_cache.has(key):
+		return _portrait_cache[key]
+	var col: Color
+	if char_id == "mystery_woman":
+		col = Color.from_hsv(0.62, 0.18, 0.12, 0.92)   # 神秘女人：近黑冷色剪影，不暴露身份
+	elif emotion == "shaken" or emotion == "broken":
+		col = Color.from_hsv(0.02, 0.6, 0.5, 0.9)   # 受击：暗红
+	else:
+		var hue: float = float(abs(char_id.hash()) % 360) / 360.0
+		col = Color.from_hsv(hue, 0.45, 0.55, 0.85)
+	var img: Image = Image.create(380, 540, false, Image.FORMAT_RGBA8)
+	img.fill(col)
+	var tex: ImageTexture = ImageTexture.create_from_image(img)
+	_portrait_cache[key] = tex
+	return tex
+
+# 取场景背景：优先真图，缺则兜底占位
+func _resolve_bg(bg_key: String) -> Texture2D:
+	if bg_key == "":
+		return BG_PLACEHOLDER
+	var path: String = "res://assets/images/backgrounds/%s.png" % bg_key
+	if ResourceLoader.exists(path):
+		var res = load(path)
+		if res is Texture2D:
+			return res
+		push_warning("背景存在但加载失败（可能未导入）: " + path)
+	return BG_PLACEHOLDER
 
 # 组装证词文本（含说话人前缀 + 已击破标记）
 func _format_statement(idx: int) -> String:
@@ -694,6 +799,10 @@ func _on_objection_success() -> void:
 		_broken_statements.append(idx)
 	_show_result("✓ 击破矛盾！\n%s" % reveal, Color(0.4, 1, 0.55))
 	_set_face(FACE_POINTING)
+	# 证人被击破：切受击表情，但 Robarts 举证高亮、证人退暗位
+	_update_speaker_portrait(_trial_witness_speaker, str(_current_stage.get("break_emotion", "shaken")))
+	_protagonist.modulate = PORTRAIT_LIT
+	_witness.modulate = PORTRAIT_DIM
 	# 判断是否所有可击破证词已全部击破
 	if _all_breakable_broken():
 		await get_tree().create_timer(2.5).timeout

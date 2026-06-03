@@ -236,7 +236,7 @@
 2. ~~Stage 4 是否采用"弑夫"终局~~ → **已定：采原作话剧 / 电影弑夫加料终局**（见 script-stage2-4.md S4）。
 3. ~~"证据语义翻转"的引擎实现方式~~ → **已定并实装：数据驱动真翻转**（`Evidence.detail_after` + `GameState.truth_revealed` + S4 `inspect_evidence` 定向再读演出）。
 4. ~~S2 的"出示即反杀"流程~~ → **已定并实装：隐式自动放行**（`trial_mode:"NARRATIVE_TRIAL"` + 证词 `backfire` 定制反杀 + 反杀累计达 `CONCEDE_THRESHOLD=3` 后 Robarts 自动认输进 outro，全程不扣信任值）。
-5. 英伦法庭题材的新美术资源规划（Robarts / Leonard / Christine 立绘、事务所 / 法庭场景）。**当前 S2–S4 仍复用第一话占位美术（cafeteria 背景 + 易南星立绘），待补英伦素材。**
+5. 英伦法庭题材的新美术资源——范围已定为**完整逆转裁判式**（主角 + 分场景背景 + 证人立绘），素材清单与引擎接入约定见 **[art-assets.md](art-assets.md)**。当前仍复用第一话占位美术，待补英伦素材 + 实现证人肖像系统。
 6. 证据再读演出的面板布局：S4 翻转面板已避开底部对话框（紧凑几何），后续随英伦美术一并精修。
 
 ---

@@ -23,12 +23,15 @@ const TYPE_TRIAL: String = "TRIAL"
 #   type:                 TYPE_NARRATIVE / TYPE_TRIAL
 #   title:                标题（顶部 / 切换时显示）
 #   scene_label:          场景文字（事务所 / 法庭等）
+#   bg:                   场景背景 id（office / courtroom / courtroom_empty）；详见 docs/art-assets.md
 #   set_truth_revealed:   true 则进入此阶段时揭示真相，触发证据细节翻转（仅终幕用）
 #   ---- NARRATIVE ----
-#   dialog:               [{speaker, text, inspect_evidence?}] 对话序列
+#   dialog:               [{speaker, text, inspect_evidence?, emotion?}] 对话序列
 #                         inspect_evidence: 该行自动摊开指定证据的（已翻转）细节
+#                         emotion: 覆盖该说话人此行的立绘表情（默认走角色注册表）
 #   unlock_on_complete:   完成此阶段时新增的证据 ID
 #   ---- TRIAL ----
+#   break_emotion:        证词被击破时证人切换的表情（默认 shaken；S1 用 broken）
 #   trial_mode:           "STANDARD"(默认) 走击破推进 / "NARRATIVE_TRIAL" 走机制失灵幕
 #                         （出示即反杀、不扣信任值，反杀累计到阈值后 Robarts 自动认输）
 #   witness_name:         证人名
@@ -49,6 +52,7 @@ const STAGES: Array = [
 		"type": "NARRATIVE",
 		"title": "第一幕 · 律师事务所",
 		"scene_label": "律师事务所  ·  下午三点",
+		"bg": "office",
 		"dialog": [
 			{"speaker": "助理 Mayhew", "text": "韦菲爵士，门外有位先生求见。"},
 			{"speaker": "Robarts", "text": "我以为我们已经讲清楚了——民事案件，离婚、遗产、合同。不接刑事。"},
@@ -98,6 +102,8 @@ const STAGES: Array = [
 		"type": "TRIAL",
 		"title": "第二幕 · 庭审第一日",
 		"scene_label": "中央刑事法庭  ·  开庭日",
+		"bg": "courtroom",
+		"break_emotion": "broken",
 		"witness_name": "Janet MacKenzie",
 		"testimony_title": "案发当晚的回忆",
 		"intro_dialog": [
@@ -173,6 +179,7 @@ const STAGES: Array = [
 		"trial_mode": "NARRATIVE_TRIAL",
 		"title": "第三幕 · 庭审第二日",
 		"scene_label": "中央刑事法庭  ·  庭审第二日",
+		"bg": "courtroom",
 		"witness_name": "Christine Vole",
 		"testimony_title": "那一夜，他回来时",
 		"intro_dialog": [
@@ -263,6 +270,8 @@ const STAGES: Array = [
 		"type": "TRIAL",
 		"title": "第四幕 · 庭审第三日",
 		"scene_label": "中央刑事法庭  ·  庭审第三日",
+		"bg": "courtroom",
+		"break_emotion": "shaken",
 		"witness_name": "Christine Vole",
 		"testimony_title": "重新传唤 · 一个女人的可信度",
 		"intro_dialog": [
@@ -328,6 +337,7 @@ const STAGES: Array = [
 		"type": "NARRATIVE",
 		"title": "终幕 · 庭审之后",
 		"scene_label": "中央刑事法庭  ·  人去庭空",
+		"bg": "courtroom_empty",
 		"set_truth_revealed": true,
 		"dialog": [
 			{"speaker": "—", "text": "（旁听席空了，灯一盏盏熄灭。偌大的法庭只剩 Robarts 和那个没有离开的女人。）"},
