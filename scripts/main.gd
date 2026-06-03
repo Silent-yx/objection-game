@@ -81,6 +81,11 @@ var _correct_pair: Dictionary = {}        # statement_idx -> evidence_id
 var _broken_statements: Array = []        # 已击破的证词索引
 var _stages_triggered_additions: Array = []
 var _detail_open: bool = false
+# NARRATIVE_TRIAL（机制失灵幕）反杀暂存
+const CONCEDE_THRESHOLD: int = 3          # 反杀达此次数后 Robarts 自动认输进 outro
+var _pending_backfire_text: String = ""   # 本次出示要显示的定制反杀文案（空=非反杀）
+var _pending_no_penalty: bool = false     # 本次出示是否豁免信任值扣减
+var _backfire_count: int = 0              # 本幕累计反杀次数
 
 # 节点准备
 func _ready() -> void:
@@ -293,6 +298,9 @@ func _start_stage(idx: int) -> void:
 		return
 	_current_stage_idx = idx
 	_current_stage = Case01.STAGES[idx]
+	# 终幕进场：揭示真相，触发证据细节翻转
+	if _current_stage.get("set_truth_revealed", false):
+		GameState.truth_revealed = true
 	_scene_label.text = str(_current_stage.get("scene_label", ""))
 	_stage_title.text = str(_current_stage.get("title", ""))
 	var st_type: String = str(_current_stage.get("type", ""))
@@ -324,6 +332,13 @@ func _show_dialog_at(idx: int) -> void:
 	var line: Dictionary = _dialog_queue[idx]
 	_dialog_speaker.text = str(line.get("speaker", ""))
 	_dialog_text.text = str(line.get("text", ""))
+	# 定向「证据再读」：终幕在特定台词自动摊开某证据的（已翻转）细节
+	var reread: String = str(line.get("inspect_evidence", ""))
+	if reread != "":
+		_show_evidence_reread(reread)
+	elif _detail_open:
+		_evidence_detail_panel.visible = false
+		_detail_open = false
 
 # 对话队列播完
 func _on_dialog_finished() -> void:
@@ -353,6 +368,9 @@ func _enter_statements_phase() -> void:
 	_correct_pair = {}
 	_broken_statements = []
 	_stages_triggered_additions = []
+	_backfire_count = 0
+	_pending_backfire_text = ""
+	_pending_no_penalty = false
 	for i in _statements.size():
 		var s: Dictionary = _statements[i]
 		if s.get("breakable_with", "") != "":
@@ -523,8 +541,11 @@ func _open_detail() -> void:
 	var ev = EvidenceDB.get_evidence(_evidence_ids[_evidence_idx])
 	if ev == null:
 		return
+	# 调查面板用全尺寸（此时无对话框，可铺满）
+	_evidence_detail_panel.position = Vector2(120, 100)
+	_evidence_detail_panel.size = Vector2(1040, 520)
 	if ev.has_detail():
-		_evidence_detail_label.text = "「%s」\n\n%s" % [ev.display_name, ev.detail]
+		_evidence_detail_label.text = "「%s」\n\n%s" % [ev.display_name, _resolve_detail(ev)]
 		_evidence_detail_label.modulate = Color(1, 1, 1)
 	else:
 		_evidence_detail_label.text = "「%s」\n\n暂无更多细节可调查。" % ev.display_name
@@ -532,6 +553,25 @@ func _open_detail() -> void:
 	_evidence_detail_panel.visible = true
 	_detail_open = true
 	_set_hint("[D] 关闭调查面板")
+
+# 取证据当前应显示的细节（真相揭示后翻转为 detail_after）
+func _resolve_detail(ev) -> String:
+	if GameState.truth_revealed and ev.detail_after != "":
+		return ev.detail_after
+	return ev.detail
+
+# 定向「证据再读」：终幕台词驱动，自动摊开指定证据的（已翻转）细节
+func _show_evidence_reread(eid: String) -> void:
+	var ev = EvidenceDB.get_evidence(eid)
+	if ev == null:
+		return
+	# 紧凑几何：停在上半屏，避开底部对话框，让台词与翻转细节同屏可见
+	_evidence_detail_panel.position = Vector2(120, 50)
+	_evidence_detail_panel.size = Vector2(1040, 460)
+	_evidence_detail_label.text = "「%s」\n\n%s" % [ev.display_name, _resolve_detail(ev)]
+	_evidence_detail_label.modulate = Color(1, 1, 1)
+	_evidence_detail_panel.visible = true
+	_detail_open = true
 
 func _close_detail() -> void:
 	_evidence_detail_panel.visible = false
@@ -598,6 +638,17 @@ func _submit_evidence() -> void:
 	_close_detail()
 	_set_face(FACE_POINTING)
 	var chosen_evi_id: String = _evidence_ids[_evidence_idx]
+	# NARRATIVE_TRIAL（机制失灵幕）：出示即反杀——算好定制反杀文案，不扣信任值
+	if str(_current_stage.get("trial_mode", "STANDARD")) == "NARRATIVE_TRIAL":
+		var s: Dictionary = _statements[_statement_idx]
+		var bf: Dictionary = s.get("backfire", {})
+		_pending_backfire_text = str(bf.get(chosen_evi_id, s.get("backfire_default", "")))
+		_pending_no_penalty = true
+		_play_objection(false)
+		return
+	# STANDARD：正常击破判定
+	_pending_backfire_text = ""
+	_pending_no_penalty = false
 	var expected: String = _correct_pair.get(_statement_idx, "")
 	if expected != "" and chosen_evi_id == expected:
 		_play_objection(true)
@@ -671,6 +722,25 @@ func _enter_outro_dialog() -> void:
 		_enter_dialog_mode(outro, AFTER_OUTRO_ADVANCE)
 
 func _on_objection_fail() -> void:
+	# NARRATIVE_TRIAL 反杀：不扣信任值，显示定制反杀文案（橙色），累计到阈值自动认输
+	if _pending_no_penalty:
+		_backfire_count += 1
+		var bf_text: String = _pending_backfire_text if _pending_backfire_text != "" else "（你的证据撼动不了她分毫。）"
+		_show_result(bf_text, Color(1, 0.85, 0.4))
+		_set_face(FACE_NERVOUS)
+		_pending_backfire_text = ""
+		_pending_no_penalty = false
+		await get_tree().create_timer(2.2).timeout
+		_result_label.visible = false
+		if _backfire_count >= CONCEDE_THRESHOLD:
+			_concede_trial()
+		else:
+			_phase = Phase.STATEMENTS
+			_set_face(FACE_NORMAL)
+			_refresh_statements()
+			_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
+		return
+	# STANDARD 失败：扣信任值
 	GameState.penalize(1)
 	_set_face(FACE_SHOCKED)
 	_show_result("✗ 错误举证！信任值 -1", Color(1, 0.5, 0.5))
@@ -680,6 +750,10 @@ func _on_objection_fail() -> void:
 	_set_face(FACE_NERVOUS)
 	_refresh_statements()
 	_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
+
+# NARRATIVE_TRIAL：无法击破，反杀累计到阈值后 Robarts 认输 → 进 outro（神秘女人登场）
+func _concede_trial() -> void:
+	_enter_outro_dialog()
 
 func _show_result(text: String, color: Color) -> void:
 	_result_label.text = text
@@ -702,5 +776,5 @@ func _on_game_complete() -> void:
 	_phase = Phase.CLEAR
 	_hide_trial_ui()
 	_dialog_panel.visible = false
-	_show_result("—— 本批次到此为止 ——\n后续幕次：妻子反水 / 神秘信件 / 真相揭露\n按 [R] 重开", Color(0.7, 0.9, 1))
+	_show_result("——  控方证人 · 全剧终  ——\n你赢下了官司，却输给了真相。\n按 [R] 重新开始", Color(0.7, 0.9, 1))
 	_set_hint("")

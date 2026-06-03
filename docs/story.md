@@ -74,9 +74,9 @@
 |---|---|---|---|---|
 | 0 | NARRATIVE | 律师事务所·初见 | 建立悬念：简单的"用妻子作不在场证人"案件 | ✅ 已实装 |
 | 1 | TRIAL | 庭审第一日 · 管家 Janet 证词 | **信心增强**：证人易碎，玩家击破顺手 | ✅ 已实装 |
-| 2 | TRIAL | 庭审第二日 · Christine 反水 | **措手不及 / 无力**：妻子当控方证人，常规击破手段失灵 | ⬜ 待设计实装 |
-| 3 | TRIAL | 庭审第三日 · 神秘信件击破 Christine | **伪胜利**：信件击垮妻子 → 无罪释放 → 玩家以为大获全胜 | ⬜ 待设计实装 |
-| 4 | NARRATIVE | 庭审后真相 + 终幕 | **崩塌 / 后背发凉**：信件是妻子伪造、Leonard 真有罪、弑夫终局 | ⬜ 待设计实装 |
+| 2 | TRIAL | 庭审第二日 · Christine 反水 | **措手不及 / 无力**：妻子当控方证人，常规击破手段失灵 | ✅ 已实装（NARRATIVE_TRIAL 机制失灵幕） |
+| 3 | TRIAL | 庭审第三日 · 神秘信件击破 Christine | **伪胜利**：信件击垮妻子 → 无罪释放 → 玩家以为大获全胜 | ✅ 已实装 |
+| 4 | NARRATIVE | 庭审后真相 + 终幕 | **崩塌 / 后背发凉**：信件是妻子伪造、Leonard 真有罪、弑夫终局 | ✅ 已实装（含证据再读翻转演出） |
 
 预计时长：约 60–75 分钟。
 
@@ -96,8 +96,8 @@
 
 ## 五、逐幕详设
 
-> Stage 0 / 1 已实装，下文为"对齐已实现内容"的概述。
-> Stage 2 / 3 / 4 为大纲，台词级详设见后续交付（含每条证词 / 矛盾点 / 击破证据 / 反转节点）。
+> **全五幕已实装**（见 [data/cases/case_01.gd](../data/cases/case_01.gd) STAGES[0..4]）。下文为概述；
+> Stage 2 / 3 / 4 的台词级详设见 [script-stage2-4.md](script-stage2-4.md)（含每条证词 / 反杀台词 / 击破证据 / 反转节点）。
 
 ### Stage 0 · 律师事务所·初见（NARRATIVE）✅
 
@@ -196,33 +196,27 @@
 4. **肌肉记忆的反噬**（S4）：揭示"击破"本身就是陷阱，玩家越熟练越是帮凶。
 5. **证据语义翻转**：同一份证据 (`christine_letters`) 在 S3 与 S4 含义相反——引擎需支持"按阶段切换证据 detail 注解"或等效演出。
 
-> 实现细节（是否新增 Stage 类型 / 证据多态 detail / 伪胜利宣判演出）留待 Stage 2-4 详设与代码方案阶段确定。
+> 实现（已落地）：不新增 Stage 类型；S2 用 `trial_mode:"NARRATIVE_TRIAL"` 旁路（出示即反杀 + 自动认输）；证据翻转用 `detail_after` 数据驱动 + S4 `inspect_evidence` 定向再读。详见 [script-stage2-4.md](script-stage2-4.md) 与 `scripts/main.gd`。
 
 ---
 
-## 七、证据清单
+## 七、证据清单（全部已实装）
 
-### 已实装（Stage 0–1）
+以 `scripts/systems/evidence_db.gd` 为准。
 
 | ID | 名称 | 出场 |
 |---|---|---|
-| `police_report` | 警方报告 | S0 完成解锁 |
+| `police_report` | 警方初步报告 | S0 完成解锁 |
 | `will_amendment` | 遗嘱修改记录 | S0 完成解锁（S1 击破第 5 条证词） |
-| `leonard_statement` | Leonard 陈述 | S0 完成解锁 |
-| `doctor_note` | Janet 耳疾诊断 | S1 选中第 1 条证词追加（击破第 2 条） |
-| `emily_letter` | Emily 托 Leonard 帮忙的信 | S1 选中第 2 条证词追加（击破第 3 条） |
+| `leonard_statement` | Leonard 自述 | S0 完成解锁（S2 反杀第 0/4 条用） |
+| `doctor_note` | 听力诊断书 | S1 选中第 1 条证词追加（击破第 2 条） |
+| `emily_letter` | Emily 寄给妹妹的信 | S1 选中第 2 条证词追加（击破第 3 条） |
+| `christine_testimony` | Christine 的控方证词笔录 | S2 选中第 1 条证词追加 + 完成解锁（叙事氛围，不作击破证据） |
+| `marriage_record_de` | 德国婚姻登记副本 | 已注册，S3 字迹比对叙事支撑（不入栏、不作击破证据） |
+| `christine_letters` | 一叠署名 Christine 的私信 | S3 开场追加；**击破 Christine 3 条证词的工具**；🔁 S4 真相后 `detail_after` 翻转语义 |
 
-> 各证据的 `description`（一眼可见）/ `detail`（按 D 调查）文案以 `scripts/systems/evidence_db.gd` 实装为准，后续在此同步登记。
-
-### 待设计（Stage 2–4）
-
-| ID（暂定） | 名称 | 预计用途 |
-|---|---|---|
-| `christine_testimony` | Christine 的控方证词记录 | S2 核心；S4 翻转语义 |
-| `christine_letters` | "Christine 写给情人 Max"的信件 | S3 击破工具；**S4 揭示为伪造** |
-| `blood_sleeve_claim` | 衣袖带血的指证 | S2 核心杀伤证词相关 |
-
-> 以上为占位，最终 ID / 文案以 Stage 2-4 详设交付为准。
+> `blood_sleeve_claim` 占位已作废——"衣袖带血"写进 S2 证词文本，无需独立证据。
+> 证据语义翻转由 `Evidence.detail_after` + `GameState.truth_revealed`（S4 进场置真）+ S4 台词的 `inspect_evidence` 定向再读演出共同实现。
 
 ---
 
@@ -238,11 +232,13 @@
 
 ## 九、开放问题 / 待决策清单
 
-1. Stage 2 核心认罪证词"破不破"——建议本幕不可破、留到 S3 用信件破（待你确认）。
-2. Stage 4 是否采用"弑夫"终局——目前采原作话剧 / 电影加料版（待你确认，亦可改为更克制的收尾）。
-3. "证据语义翻转"的引擎实现方式——新增字段 vs 纯演出（详设阶段定）。
-4. 英伦法庭题材的新美术资源规划（Robarts / Leonard / Christine 立绘、事务所 / 法庭场景）。
+1. ~~Stage 2 核心认罪证词"破不破"~~ → **已定：本幕不可破，留到 S3 用信件破**（见 script-stage2-4.md S2）。
+2. ~~Stage 4 是否采用"弑夫"终局~~ → **已定：采原作话剧 / 电影弑夫加料终局**（见 script-stage2-4.md S4）。
+3. ~~"证据语义翻转"的引擎实现方式~~ → **已定并实装：数据驱动真翻转**（`Evidence.detail_after` + `GameState.truth_revealed` + S4 `inspect_evidence` 定向再读演出）。
+4. ~~S2 的"出示即反杀"流程~~ → **已定并实装：隐式自动放行**（`trial_mode:"NARRATIVE_TRIAL"` + 证词 `backfire` 定制反杀 + 反杀累计达 `CONCEDE_THRESHOLD=3` 后 Robarts 自动认输进 outro，全程不扣信任值）。
+5. 英伦法庭题材的新美术资源规划（Robarts / Leonard / Christine 立绘、事务所 / 法庭场景）。**当前 S2–S4 仍复用第一话占位美术（cafeteria 背景 + 易南星立绘），待补英伦素材。**
+6. 证据再读演出的面板布局：S4 翻转面板已避开底部对话框（紧凑几何），后续随英伦美术一并精修。
 
 ---
 
-*最后更新：2026-06-02 — 主线切换为《控方证人》忠实英伦改编；Stage 0-1 对齐已实装，Stage 2-4 大纲落定。*
+*最后更新：2026-06-03 — 全五幕实装完成（S2 机制失灵幕 + S3 伪胜利 + S4 弑夫终幕与证据再读翻转）；待补英伦美术与交互 playtest。*

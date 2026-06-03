@@ -10,11 +10,13 @@ const MAX_TRUST: int = 5
 var trust: int = MAX_TRUST
 var current_case_id: String = ""
 var collected_evidence_ids: Array[String] = []
+var truth_revealed: bool = false   # 终幕真相揭示后置真，触发部分证据的细节翻转
 
 # 重置游戏状态
 func reset() -> void:
 	trust = MAX_TRUST
 	collected_evidence_ids.clear()
+	truth_revealed = false
 	trust_changed.emit(trust, MAX_TRUST)
 
 # 扣信任值

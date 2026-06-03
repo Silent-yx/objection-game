@@ -12,12 +12,14 @@ class Evidence:
 	var display_name: String
 	var description: String
 	var detail: String
+	var detail_after: String   # 真相揭示后翻转的细节（为空则永不翻转）
 
-	func _init(p_id: String, p_name: String, p_desc: String, p_detail: String = "") -> void:
+	func _init(p_id: String, p_name: String, p_desc: String, p_detail: String = "", p_detail_after: String = "") -> void:
 		id = p_id
 		display_name = p_name
 		description = p_desc
 		detail = p_detail
+		detail_after = p_detail_after
 
 	func has_detail() -> bool:
 		return detail != ""
@@ -60,23 +62,33 @@ func _ready() -> void:
 		"信中提到：「Vole 先生帮我整理了客厅那个旧抽屉，里头乱七八糟堆了二十年。我请他过来弄。」"
 	)
 
-	# 未来 Stage 用（先注册占位，下一批次启用）
+	# Stage 2（Christine 反水）选中核心证词时入栏；S3 字迹比对的叙事氛围
+	_register(
+		"christine_testimony",
+		"Christine 的控方证词笔录",
+		"庭审记录：被告于二十二时十分返家，衣袖带血，自陈杀人。",
+		"笔录措辞冷静、滴水不漏，无一处自相矛盾——反常地完美。"
+	)
+	# Stage 2 叙事支撑（注册保留，不入栏、不作击破证据）
 	_register(
 		"marriage_record_de",
 		"德国婚姻登记副本",
-		"Romaine Vole 在德国与他人登记结婚的副本（1945 年）。",
-		"该婚姻在英国法律下从未解除——意味着 Romaine 与 Leonard 的「婚姻」可能无效。"
+		"Christine（婚前名 Romaine）在德国与他人登记结婚的副本（1945 年）。",
+		"该婚姻在英国法律下从未解除——意味着 Christine 与 Leonard 的「婚姻」可能无效。"
 	)
+	# Stage 3（神秘信件）由神秘女人卖给 Robarts，击破 Christine 的工具；
+	# detail = S3 伪胜利时的语义；detail_after = S4 真相揭示后翻转的语义。
 	_register(
-		"anonymous_letters",
-		"匿名信件包",
-		"一位神秘女士交给 Robarts 的信件包，内含 Romaine 写给 Max 的信若干。",
-		"信中 Romaine 写道：「······我恨他，Max，我要让他付出代价。请等我。」"
+		"christine_letters",
+		"一叠署名 Christine 的私信",
+		"写给「Max」的情书，字迹娟秀。",
+		"信里盼着 Leonard 被送上绞架、好与情人 Max 远走高飞——这分明是个心怀怨毒、说谎成性的女人。",
+		"真相之后再读：这些信是 Christine 亲手伪造、特意留下破绽卖给你的。她把自己演成一个可恨的毒妇，就为了让你『揭穿』她、把陪审团推向无罪——你不是赢了，你是被她当成了脱罪的工具。"
 	)
 
 # 注册一条证据
-func _register(id: String, display_name: String, description: String, detail: String = "") -> void:
-	_db[id] = Evidence.new(id, display_name, description, detail)
+func _register(id: String, display_name: String, description: String, detail: String = "", detail_after: String = "") -> void:
+	_db[id] = Evidence.new(id, display_name, description, detail, detail_after)
 
 # 按 ID 取证据
 func get_evidence(id: String) -> Evidence:
