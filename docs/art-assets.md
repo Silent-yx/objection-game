@@ -150,10 +150,11 @@
 
 **每个素材的完整可粘贴提示词见 → [art-prompts.md](art-prompts.md)**（含全局风格锚点、各角色锚点、逐表情提示词、一致性工作流、MJ/SD/国产工具适配、神秘女人保密要点）。
 
-要点速记：
-- 统一风格锚点：`1950s London, oil-painting / film-still aesthetic, muted desaturated, dramatic chiaroscuro, painterly`
-- 同一角色多表情务必**同一画风/同一构图/同一光源**，仅改神态——用基准图 + MJ `--cref` / SD 固定 seed+参考图复用人设，避免穿帮
-- 神秘女人**必须阴影剪影、不露五官**，绝不能暴露是 Christine 乔装
+要点速记（生图工具：**GPT Image 2**；全局画风：**《罗小黑战记》式干净扁平国漫**）：
+- 统一画风：粗而干净的单线 + 大色块平涂 + 弱/无阴影 + 柔和治愈配色；背景偏水彩 + 中式水墨意境。承载 1950s 英伦法庭题材（清爽画风 × 严肃案件的反差）。
+- 立绘 1024×1536、背景 1536×1024；GPT Image 2 原生透明背景（API `background:"transparent"`，或正文写 "transparent background"）。
+- **全局一致性**：先出一张"风格锚定图"定调，之后**每张**（含背景）都挂它作参考；同角色多表情再叠该角色 `normal` 基准图，只改神态。
+- 神秘女人**必须阴影剪影、不露五官**，绝不能暴露是 Christine 乔装。
 
 ---
 
