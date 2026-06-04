@@ -84,6 +84,11 @@ var _toast_label: Label
 var _flash: ColorRect
 var _objection_sprite: TextureRect
 var _result_label: Label
+# 鼠标操作按钮
+var _evidence_btn: Button     # 庭审中打开证据栏
+var _btn_investigate: Button  # 证据栏内：调查
+var _btn_present: Button      # 证据栏内：举证
+var _btn_close: Button        # 证据栏内：关闭
 
 # ------- 状态 -------
 var _phase: int = Phase.DIALOG
@@ -237,14 +242,15 @@ func _build_ui() -> void:
 	# 证据栏
 	_evidence_panel = Panel.new()
 	_evidence_panel.position = Vector2(200, 180)
-	_evidence_panel.size = Vector2(880, 400)
+	_evidence_panel.size = Vector2(880, 460)
 	_evidence_panel.visible = false
 	_ui_layer.add_child(_evidence_panel)
 
 	var ev_title := Label.new()
-	ev_title.text = "🗂  证据栏  —  [D] 调查证物    [SPACE] 举证    [E] 关闭"
+	ev_title.text = "🗂  证据栏  —  [D]/🔍 调查    [SPACE]/双击 举证    [E]/✖ 关闭"
 	ev_title.position = Vector2(24, 16)
 	ev_title.add_theme_font_size_override("font_size", 20)
+	ev_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_evidence_panel.add_child(ev_title)
 
 	_evidence_container = VBoxContainer.new()
@@ -269,10 +275,11 @@ func _build_ui() -> void:
 	_ui_layer.add_child(_evidence_detail_panel)
 
 	var dt_title := Label.new()
-	dt_title.text = "🔍  调查证物  —  再按 [D] 关闭"
+	dt_title.text = "🔍  调查证物  —  再按 [D]/点击 关闭"
 	dt_title.position = Vector2(24, 16)
 	dt_title.add_theme_font_size_override("font_size", 22)
 	dt_title.modulate = Color(1, 0.95, 0.5)
+	dt_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_evidence_detail_panel.add_child(dt_title)
 
 	_evidence_detail_label = Label.new()
@@ -320,6 +327,43 @@ func _build_ui() -> void:
 	_result_label.visible = false
 	_ui_layer.add_child(_result_label)
 
+	# ---- 鼠标适配：装饰节点忽略鼠标，让点击落到 _unhandled_input（点击推进/关面板）----
+	for n in [_dialog_panel, _dialog_speaker, _dialog_text, _dialog_continue,
+			_evidence_panel, _evidence_desc, _evidence_detail_panel, _evidence_detail_label,
+			_witness_label, _hint_label, _toast_label, _result_label, _scene_label, _stage_title]:
+		n.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_build_mouse_buttons()
+
+# 构建鼠标操作按钮（键盘仍可用，按钮 focus_mode=NONE 不抢键盘）
+func _build_mouse_buttons() -> void:
+	_evidence_btn = _make_button("📂 证据栏", Vector2(1040, 656), Vector2(210, 46))
+	_evidence_btn.pressed.connect(_open_evidence_panel)
+	_evidence_btn.visible = false
+	_ui_layer.add_child(_evidence_btn)
+
+	_btn_investigate = _make_button("🔍 调查", Vector2(24, 408), Vector2(180, 40))
+	_btn_investigate.pressed.connect(_toggle_evidence_detail)
+	_evidence_panel.add_child(_btn_investigate)
+
+	_btn_present = _make_button("⚖ 举证！", Vector2(340, 408), Vector2(210, 40))
+	_btn_present.pressed.connect(_submit_evidence)
+	_evidence_panel.add_child(_btn_present)
+
+	_btn_close = _make_button("✖ 关闭", Vector2(700, 408), Vector2(150, 40))
+	_btn_close.pressed.connect(_close_evidence_panel)
+	_evidence_panel.add_child(_btn_close)
+
+# 造一个鼠标专用按钮
+func _make_button(text: String, pos: Vector2, size: Vector2) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.position = pos
+	b.size = size
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.add_theme_font_size_override("font_size", 18)
+	return b
+
 # =========================================================
 # Stage 推进
 # =========================================================
@@ -360,7 +404,7 @@ func _enter_dialog_mode(dialog_array: Array, after_action: String) -> void:
 	_set_face(FACE_NORMAL)
 	_protagonist.modulate = PORTRAIT_LIT
 	_witness.modulate = PORTRAIT_DIM
-	_set_hint("[SPACE] 推进对话    [R] 重开")
+	_set_hint("[SPACE]/点击 推进对话    [R] 重开")
 	_show_dialog_at(_dialog_idx)
 
 # 显示对话队列的第 idx 条
@@ -428,7 +472,8 @@ func _enter_statements_phase() -> void:
 	_refresh_statements()
 	_refresh_evidence_list()
 	_check_stage_additions(_statement_idx)
-	_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
+	_evidence_btn.visible = true
+	_set_hint("[↑↓]/点击 选证词    [E]/按钮 证据栏    [R] 重开")
 
 # 隐藏庭审相关 UI
 func _hide_trial_ui() -> void:
@@ -436,6 +481,7 @@ func _hide_trial_ui() -> void:
 	_statement_container.visible = false
 	_evidence_panel.visible = false
 	_evidence_detail_panel.visible = false
+	_evidence_btn.visible = false
 	_detail_open = false
 
 # 显示庭审相关 UI
@@ -448,13 +494,28 @@ func _rebuild_statement_labels() -> void:
 	for child in _statement_container.get_children():
 		child.queue_free()
 	_statement_labels.clear()
-	for s in _statements:
+	for i in _statements.size():
 		var lbl := Label.new()
 		lbl.add_theme_font_size_override("font_size", 19)
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		lbl.custom_minimum_size = Vector2(800, 0)
+		lbl.mouse_filter = Control.MOUSE_FILTER_STOP
+		lbl.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		lbl.gui_input.connect(_on_statement_gui_input.bind(i))
 		_statement_container.add_child(lbl)
 		_statement_labels.append(lbl)
+
+# 点击证词 → 选中（鼠标）
+func _on_statement_gui_input(event: InputEvent, idx: int) -> void:
+	if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
+		return
+	# 非证词阶段（如证据栏开着/结算页）：STOP 标签别吞点击，转发给统一处理
+	if _phase != Phase.STATEMENTS:
+		_handle_left_click()
+		return
+	_statement_idx = idx
+	_refresh_statements()
+	_check_stage_additions(_statement_idx)
 
 # 设置主角表情立绘
 func _set_face(face: Texture2D) -> void:
@@ -557,9 +618,26 @@ func _refresh_evidence_list() -> void:
 		var lbl := Label.new()
 		lbl.add_theme_font_size_override("font_size", 18)
 		lbl.text = _format_evidence_line(i, ev.display_name, ev.has_detail())
+		lbl.mouse_filter = Control.MOUSE_FILTER_STOP
+		lbl.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		lbl.gui_input.connect(_on_evidence_gui_input.bind(i))
 		_evidence_container.add_child(lbl)
 		_evidence_labels.append(lbl)
 	_refresh_evidence_highlight()
+
+# 点击证据 → 选中；双击 → 举证（鼠标）
+func _on_evidence_gui_input(event: InputEvent, idx: int) -> void:
+	if _phase != Phase.EVIDENCE_PICK:
+		return
+	if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
+		return
+	if _detail_open:
+		_close_detail()
+		return
+	_evidence_idx = idx
+	_refresh_evidence_highlight()
+	if event.double_click:
+		_submit_evidence()
 
 func _format_evidence_line(idx: int, display_name: String, has_detail: bool) -> String:
 	var prefix := "▶ " if idx == _evidence_idx else "  "
@@ -584,6 +662,10 @@ func _set_hint(text: String) -> void:
 # 输入
 # =========================================================
 func _unhandled_input(event: InputEvent) -> void:
+	# 鼠标左键：落到此处的都是非交互区/对话区的点击（证词/证据/按钮已各自消费）
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_handle_left_click()
+		return
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
 	var key: int = event.keycode
@@ -601,6 +683,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			_handle_testimony_input(key)
 		Phase.EVIDENCE_PICK:
 			_handle_evidence_input(key)
+		_:
+			pass
+
+# 鼠标左键点击非交互区的行为（按阶段）
+func _handle_left_click() -> void:
+	match _phase:
+		Phase.DIALOG:
+			_dialog_idx += 1
+			_show_dialog_at(_dialog_idx)
+		Phase.EVIDENCE_PICK:
+			if _detail_open:
+				_close_detail()
+		Phase.GAME_OVER, Phase.CLEAR:
+			get_tree().reload_current_scene()
 		_:
 			pass
 
@@ -657,7 +753,7 @@ func _open_detail() -> void:
 		_evidence_detail_label.modulate = Color(0.7, 0.7, 0.75)
 	_evidence_detail_panel.visible = true
 	_detail_open = true
-	_set_hint("[D] 关闭调查面板")
+	_set_hint("[D]/点击 关闭调查面板")
 
 # 取证据当前应显示的细节（真相揭示后翻转为 detail_after）
 func _resolve_detail(ev) -> String:
@@ -681,24 +777,26 @@ func _show_evidence_reread(eid: String) -> void:
 func _close_detail() -> void:
 	_evidence_detail_panel.visible = false
 	_detail_open = false
-	_set_hint("[↑↓] 选证据    [D] 调查    [SPACE] 举证！   [E] 关闭")
+	_set_hint("[↑↓]/点击 选证据    [D]/🔍 调查    [SPACE]/双击 举证！   [E]/✖ 关闭")
 
 func _open_evidence_panel() -> void:
 	_phase = Phase.EVIDENCE_PICK
 	_evidence_idx = 0
 	_evidence_panel.visible = true
+	_evidence_btn.visible = false
 	_set_face(FACE_THINKING)
 	_refresh_statements()
 	_refresh_evidence_highlight()
-	_set_hint("[↑↓] 选证据    [D] 调查    [SPACE] 举证！   [E] 关闭")
+	_set_hint("[↑↓]/点击 选证据    [D]/🔍 调查    [SPACE]/双击 举证！   [E]/✖ 关闭")
 
 func _close_evidence_panel() -> void:
 	_phase = Phase.STATEMENTS
 	_evidence_panel.visible = false
 	_close_detail()
+	_evidence_btn.visible = true
 	_set_face(FACE_NORMAL)
 	_refresh_statements()
-	_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
+	_set_hint("[↑↓]/点击 选证词    [E]/按钮 证据栏    [R] 重开")
 
 # =========================================================
 # 阶段追加证据
@@ -738,6 +836,8 @@ func _show_toast(text: String) -> void:
 func _submit_evidence() -> void:
 	if _phase != Phase.EVIDENCE_PICK:
 		return
+	if _evidence_ids.is_empty():
+		return  # 空证据栏防越界（键鼠两条路径都走这里）
 	_phase = Phase.OBJECTION_PLAY
 	_evidence_panel.visible = false
 	_close_detail()
@@ -811,10 +911,7 @@ func _on_objection_success() -> void:
 	else:
 		await get_tree().create_timer(2.0).timeout
 		_result_label.visible = false
-		_phase = Phase.STATEMENTS
-		_set_face(FACE_NORMAL)
-		_refresh_statements()
-		_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
+		_return_to_statements(FACE_NORMAL)
 
 func _all_breakable_broken() -> bool:
 	for idx in _correct_pair.keys():
@@ -830,6 +927,14 @@ func _enter_outro_dialog() -> void:
 	else:
 		_enter_dialog_mode(outro, AFTER_OUTRO_ADVANCE)
 
+# 回到证词阶段：统一恢复 phase/表情/证据栏按钮/提示（防止漏恢复鼠标按钮）
+func _return_to_statements(face: Texture2D) -> void:
+	_phase = Phase.STATEMENTS
+	_set_face(face)
+	_refresh_statements()
+	_evidence_btn.visible = true
+	_set_hint("[↑↓]/点击 选证词    [E]/按钮 证据栏    [R] 重开")
+
 func _on_objection_fail() -> void:
 	# NARRATIVE_TRIAL 反杀：不扣信任值，显示定制反杀文案（橙色），累计到阈值自动认输
 	if _pending_no_penalty:
@@ -844,21 +949,17 @@ func _on_objection_fail() -> void:
 		if _backfire_count >= CONCEDE_THRESHOLD:
 			_concede_trial()
 		else:
-			_phase = Phase.STATEMENTS
-			_set_face(FACE_NORMAL)
-			_refresh_statements()
-			_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
+			_return_to_statements(FACE_NORMAL)
 		return
 	# STANDARD 失败：扣信任值
 	GameState.penalize(1)
+	if _phase == Phase.GAME_OVER:
+		return  # 信任值归零，game_over 已接管，勿覆盖结算界面
 	_set_face(FACE_SHOCKED)
 	_show_result("✗ 错误举证！信任值 -1", Color(1, 0.5, 0.5))
 	await get_tree().create_timer(1.5).timeout
 	_result_label.visible = false
-	_phase = Phase.STATEMENTS
-	_set_face(FACE_NERVOUS)
-	_refresh_statements()
-	_set_hint("[↑↓] 选证词    [E] 翻证据栏    [R] 重开")
+	_return_to_statements(FACE_NERVOUS)
 
 # NARRATIVE_TRIAL：无法击破，反杀累计到阈值后 Robarts 认输 → 进 outro（神秘女人登场）
 func _concede_trial() -> void:
@@ -876,8 +977,10 @@ func _on_trust_changed(new_value: int, max_value: int) -> void:
 
 func _on_game_over() -> void:
 	_phase = Phase.GAME_OVER
+	_hide_trial_ui()
+	_dialog_panel.visible = false
 	_set_face(FACE_SHOCKED)
-	_show_result("⚖  GAME OVER  ⚖\n按 [R] 重开", Color(1, 0.4, 0.4))
+	_show_result("⚖  GAME OVER  ⚖\n按 [R] 重开 / 点击重开", Color(1, 0.4, 0.4))
 	_set_hint("")
 
 # 全案结束（所有 stage 跑完）
